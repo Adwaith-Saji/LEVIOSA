@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#071018">
+    <title>ParkMe — 3D Digital Twin Parking</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "./libs/three.module.js",
+        "three/addons/controls/OrbitControls.js": "./libs/OrbitControls.js",
+        "three/addons/loaders/GLTFLoader.js": "./libs/GLTFLoader.js"
+      }
+    }
+    </script>
+</head>
+<body>
+    <div class="ambient" aria-hidden="true"></div>
+    <div class="app-container">
+        <header class="app-header">
+            <div class="brand-group">
+                <div class="brand-logo">
+                    <span class="logo-mark" aria-hidden="true">
+                        <svg viewBox="0 0 32 32" width="28" height="28">
+                            <rect x="3" y="18" width="26" height="8" rx="1.5" fill="#1d4ed8" opacity="0.9"/>
+                            <rect x="5" y="10" width="22" height="8" rx="1.5" fill="#38bdf8"/>
+                            <rect x="8" y="6" width="6" height="4" rx="0.8" fill="#e2e8f0"/>
+                            <rect x="18" y="6" width="6" height="4" rx="0.8" fill="#e2e8f0"/>
+                        </svg>
+                    </span>
+                    <div class="brand-text">
+                        <h1>ParkMe <span>3D Twin</span></h1>
+                        <span class="brand-tagline">Interactive parking facility</span>
+                    </div>
+                </div>
+                <div class="live-status-pill" id="liveStatusPill">
+                    <span class="pulse-dot"></span>
+                    <span class="status-label" id="liveStatusLabel">Connecting</span>
+                </div>
+            </div>
+
+            <div class="facility-stats" role="group" aria-label="Facility occupancy">
+                <div class="stat-card">
+                    <span class="stat-label">Total</span>
+                    <span class="stat-value" id="statTotal">40</span>
+                </div>
+                <div class="stat-card stat-available">
+                    <span class="stat-label">Available</span>
+                    <div class="stat-inline">
+                        <span class="indicator-dot available"></span>
+                        <span class="stat-value" id="statAvailable">--</span>
+                    </div>
+                </div>
+                <div class="stat-card stat-occupied">
+                    <span class="stat-label">Occupied</span>
+                    <div class="stat-inline">
+                        <span class="indicator-dot occupied"></span>
+                        <span class="stat-value" id="statOccupied">--</span>
+                    </div>
+                </div>
+                <div class="stat-card stat-reserved">
+                    <span class="stat-label">Reserved</span>
+                    <div class="stat-inline">
+                        <span class="indicator-dot reserved"></span>
+                        <span class="stat-value" id="statReserved">--</span>
+                    </div>
+                </div>
+                <div class="stat-card stat-occupancy">
+                    <span class="stat-label">Occupancy</span>
+                    <span class="stat-value" id="statRate">--%</span>
+                    <div class="mini-progress-bar">
+                        <div class="mini-fill" id="occupancyFill" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <nav class="app-nav" role="tablist" aria-label="Main Navigation">
+                <button class="nav-tab active" id="navTwinTab" type="button" role="tab" aria-selected="true" data-view="twin">
+                    <span class="tab-icon">🌐</span>
+                    <span>3D Twin View</span>
+                </button>
+                <button class="nav-tab" id="navBookingsTab" type="button" role="tab" aria-selected="false" data-view="bookings">
+                    <span class="tab-icon">🎟️</span>
+                    <span>Your Bookings</span>
+                    <span class="nav-badge hidden" id="bookingsCountBadge">0</span>
+                </button>
+            </nav>
+
+            <div class="header-actions">
+                <button class="btn btn-secondary" id="btnSimulate" type="button">
+                    Simulate traffic
+                </button>
+                <button class="btn btn-ghost" id="btnRefresh" type="button" title="Refresh data" aria-label="Refresh data">
+                    Refresh
+                </button>
+            </div>
+        </header>
+
+        <!-- 3D TWIN VIEW -->
+        <div id="viewTwin" class="view-panel active">
+            <main class="main-layout">
+            <section class="viewport-section">
+                <div class="viewport-card">
+                    <div class="viewport-toolbar">
+                        <div class="toolbar-group">
+                            <span class="group-title">Floor</span>
+                            <div class="pill-selector" id="floorViewSelector">
+                                <button class="pill active" type="button" data-floor="0">All</button>
+                                <button class="pill" type="button" data-floor="1">P1 Ground</button>
+                                <button class="pill" type="button" data-floor="2">P2 Rooftop</button>
+                            </div>
+                        </div>
+                        <div class="toolbar-group">
+                            <span class="group-title">Camera</span>
+                            <div class="pill-selector scroll-pills" id="cameraAngleSelector">
+                                <button class="pill active" type="button" data-cam="overview">Overview</button>
+                                <button class="pill" type="button" data-cam="topdown">Birds-eye</button>
+                                <button class="pill" type="button" data-cam="entrance">Entrance</button>
+                                <button class="pill" type="button" data-cam="floor1">P1 Interior</button>
+                                <button class="pill" type="button" data-cam="floor2">P2 Deck</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="threeContainer" class="three-container">
+                        <div id="modelLoadingOverlay" class="model-loading-overlay">
+                            <div class="spinner"></div>
+                            <div class="loading-title">Loading parking model</div>
+                            <div class="loading-bar-track">
+                                <div class="loading-bar-fill" id="loadingProgressBar"></div>
+                            </div>
+                            <div class="loading-sub" id="loadingProgressText">Fetching Blender GLB…</div>
+                        </div>
+                        <div id="slot3DTooltip" class="slot-3d-tooltip hidden"></div>
+                        <div class="viewport-legend">
+                            <div class="legend-item"><span class="legend-dot available"></span> Free</div>
+                            <div class="legend-item"><span class="legend-dot occupied"></span> Occupied</div>
+                            <div class="legend-item"><span class="legend-dot reserved"></span> Reserved</div>
+                            <div class="legend-item"><span class="legend-dot recommended"></span> Recommended</div>
+                        </div>
+                        <div class="viewport-hint">Drag to orbit · Scroll to zoom · Tap a bay</div>
+                        <div class="viewport-floating-controls">
+                            <button class="icon-btn" id="btnAutoRotate" type="button">Auto rotate</button>
+                            <button class="icon-btn" id="btnResetCamera" type="button">Center</button>
+                            <button class="icon-btn" id="btnFullscreen" type="button">Fullscreen</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="sidebar-section">
+                <div class="panel-card recommendation-card">
+                    <div class="card-header">
+                        <div class="header-icon-box" aria-hidden="true">◎</div>
+                        <div>
+                            <h2>Smart spot finder</h2>
+                            <p class="subtitle">Route to the closest open bay for your destination</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="destinationSelect">Destination</label>
+                            <div class="select-wrapper">
+                                <select id="destinationSelect">
+                                    <option value="">Loading destinations…</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="preferences-group">
+                            <span class="pref-title">Preferences</span>
+                            <div class="checkbox-chips">
+                                <label class="chip-toggle">
+                                    <input type="checkbox" id="prefLift" checked>
+                                    <span>Near lift</span>
+                                </label>
+                                <label class="chip-toggle">
+                                    <input type="checkbox" id="prefEntrance">
+                                    <span>Near entrance</span>
+                                </label>
+                                <label class="chip-toggle">
+                                    <input type="checkbox" id="prefStairs">
+                                    <span>Near stairs</span>
+                                </label>
+                            </div>
+                        </div>
+                        <button id="recommendButton" class="btn btn-primary btn-block" type="button">
+                            Find best parking spot
+                        </button>
+                        <div id="recommendationContainer" class="recommendation-result">
+                            <div class="empty-state-hint">
+                                Choose a destination to see a 3D waypoint into the recommended bay.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-card inspector-card" id="slotInspectorCard">
+                    <div class="card-header">
+                        <div class="header-icon-box" aria-hidden="true">▣</div>
+                        <div>
+                            <h2>Bay inspector</h2>
+                            <p class="subtitle">Select a bay in 3D or from the matrix</p>
+                        </div>
+                    </div>
+                    <div class="card-body" id="inspectorBody">
+                        <div class="inspector-placeholder">
+                            <p>Hover or tap any parking bay to inspect coordinates and change status.</p>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </main>
+
+        <section class="matrix-section">
+            <div class="matrix-card">
+                <div class="matrix-header">
+                    <div class="matrix-title-group">
+                        <h2>Live bay matrix</h2>
+                        <span class="matrix-badge">40 bays · P1 &amp; P2</span>
+                    </div>
+                    <div class="matrix-filters">
+                        <div class="filter-group">
+                            <span class="filter-label">Floor</span>
+                            <div class="pill-selector" id="matrixFloorFilter">
+                                <button class="pill active" type="button" data-floor="all">All</button>
+                                <button class="pill" type="button" data-floor="1">P1</button>
+                                <button class="pill" type="button" data-floor="2">P2</button>
+                            </div>
+                        </div>
+                        <div class="filter-group">
+                            <span class="filter-label">Status</span>
+                            <div class="pill-selector" id="matrixStatusFilter">
+                                <button class="pill active" type="button" data-status="all">All</button>
+                                <button class="pill" type="button" data-status="available">Free</button>
+                                <button class="pill" type="button" data-status="occupied">Occupied</button>
+                                <button class="pill" type="button" data-status="reserved">Reserved</button>
+                            </div>
+                        </div>
+                        <div class="search-input-wrapper">
+                            <input type="search" id="slotSearchInput" placeholder="Search A05, B12…" autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+                <div class="slots-grid" id="slotsContainer">
+                    <div class="grid-loading">Loading bay statuses…</div>
+                </div>
+            </div>
+        </section>
+        </div><!-- End viewTwin -->
+
+        <!-- YOUR BOOKINGS VIEW -->
+        <div id="viewBookings" class="view-panel hidden">
+            <section class="bookings-view-section">
+                <div class="bookings-card">
+                    <div class="bookings-header">
+                        <div class="bookings-title-group">
+                            <div class="header-icon-box" aria-hidden="true">🎟️</div>
+                            <div>
+                                <h2>Your Bookings &amp; Parking Passes</h2>
+                                <p class="subtitle">Active QR codes remain valid and scannable until the assigned expiration limit</p>
+                            </div>
+                        </div>
+                        <div class="bookings-actions">
+                            <button class="btn btn-secondary" id="btnRefreshBookings" type="button">
+                                Refresh passes
+                            </button>
+                            <button class="btn btn-primary" id="btnNewBooking" type="button">
+                                + Find &amp; Park Bay
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bookings-content-area">
+                        <!-- Active Passes -->
+                        <div class="booking-category-block">
+                            <div class="category-title-bar">
+                                <div class="category-label-group">
+                                    <span class="live-dot-green"></span>
+                                    <h3>Active Parking Passes</h3>
+                                </div>
+                                <span class="category-pill" id="activeCategoryPill">0 active</span>
+                            </div>
+                            <div class="passes-grid" id="activePassesGrid">
+                                <div class="empty-passes-hint">Loading active passes…</div>
+                            </div>
+                        </div>
+
+                        <!-- Past / Expired Sessions -->
+                        <div class="booking-category-block history-block">
+                            <div class="category-title-bar">
+                                <div class="category-label-group">
+                                    <span class="live-dot-gray"></span>
+                                    <h3>Completed &amp; Past Sessions</h3>
+                                </div>
+                                <span class="category-pill history" id="historyCategoryPill">0 sessions</span>
+                            </div>
+                            <div class="passes-grid" id="historyPassesGrid">
+                                <div class="empty-passes-hint">No past sessions yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <footer class="app-footer">
+            <span>ParkMe digital twin · Blender model + live occupancy</span>
+            <span>Orbit, pinch, and fullscreen supported</span>
+        </footer>
+    </div>
+
+    <!-- BOOKING & OVERSTAY FINE WARNING MODAL -->
+    <div id="bookingModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modalHeading">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <span class="modal-icon-badge">🚗</span>
+                    <div>
+                        <h3 id="modalHeading">Park Here — Slot Reservation</h3>
+                        <span class="modal-sub" id="modalSlotSubtitle">Selected Bay Details</span>
+                    </div>
+                </div>
+                <button class="btn-close-modal" id="btnModalClose" type="button" aria-label="Close modal">✕</button>
+            </div>
+
+            <div class="modal-body">
+                <!-- Slot Summary Banner -->
+                <div class="modal-slot-summary" id="modalSlotSummary">
+                    <div class="slot-summary-main">
+                        <span class="summary-slot-id" id="modalSlotNum">Bay --</span>
+                        <span class="badge available" id="modalSlotStatus">AVAILABLE</span>
+                    </div>
+                    <div class="summary-meta" id="modalSlotMeta">Floor P1 · Near Lift</div>
+                </div>
+
+                <!-- Vehicle Plate Input -->
+                <div class="modal-field-group">
+                    <label for="modalVehiclePlate">Vehicle Registration Number</label>
+                    <div class="input-icon-wrap">
+                        <span class="input-icon">🚘</span>
+                        <input type="text" id="modalVehiclePlate" value="KA-01-MJ-2024" placeholder="e.g. KA-01-MJ-2024" maxlength="15" autocomplete="off">
+                    </div>
+                </div>
+
+                <!-- Duration Selector -->
+                <div class="modal-field-group">
+                    <label>Duration of Parking</label>
+                    <div class="duration-chip-group" id="modalDurationChips">
+                        <button type="button" class="duration-chip active" data-hours="1">1 Hour</button>
+                        <button type="button" class="duration-chip" data-hours="2">2 Hours</button>
+                        <button type="button" class="duration-chip" data-hours="3">3 Hours</button>
+                        <button type="button" class="duration-chip" data-hours="4">4 Hours</button>
+                        <button type="button" class="duration-chip" data-hours="8">8 Hours</button>
+                    </div>
+                    <div class="custom-hours-row">
+                        <span>Custom duration:</span>
+                        <input type="number" id="modalCustomHoursInput" min="0.5" max="24" step="0.5" value="1.0">
+                        <span class="custom-unit">hrs</span>
+                        <span class="duration-calc-note" id="modalDurationNote">(60 minutes)</span>
+                    </div>
+                </div>
+
+                <!-- Fee & Limit Breakdown -->
+                <div class="fee-summary-card">
+                    <div class="fee-row">
+                        <span class="fee-label">Standard Parking Fee Rate</span>
+                        <span class="fee-val">₹50.00 / hr</span>
+                    </div>
+                    <div class="fee-row">
+                        <span class="fee-label">Assigned Expiration Limit</span>
+                        <span class="fee-val highlight" id="modalExpiryLimitPreview">--</span>
+                    </div>
+                    <div class="fee-divider"></div>
+                    <div class="fee-row fee-grand-total">
+                        <span class="fee-label-main">Total Parking Fee</span>
+                        <span class="fee-val-main" id="modalTotalFeeDisplay">₹50.00</span>
+                    </div>
+                </div>
+
+                <!-- PROMINENT OVERSTAY FINE WARNING -->
+                <div class="fine-warning-card">
+                    <div class="warning-badge-title">
+                        <span class="warning-icon">⚠️</span>
+                        <strong>OVERSTAY PENALTY &amp; FINE WARNING</strong>
+                    </div>
+                    <p class="warning-text">
+                        Parking is strictly authorized up to your assigned time limit. If you remain parked for <strong>more hours than assigned</strong>, an overstay penalty fine of 
+                        <strong class="fine-highlight">₹100.00 / hour</strong> will be billed automatically upon checkout.
+                    </p>
+                    <p class="warning-sub">
+                        • Your unique exit QR code is valid strictly until the expiration limit.<br>
+                        • Please vacate or extend your slot beforehand to avoid exit gate lock and penalties.
+                    </p>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btnModalCancel" type="button">Cancel</button>
+                <button class="btn btn-primary" id="btnModalConfirm" type="button">
+                    Accept Policy &amp; Park Here
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastStack" class="toast-stack" aria-live="polite"></div>
+
+    <script src="libs/qrcode.min.js"></script>
+    <script type="module" src="three.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
